@@ -1,0 +1,97 @@
+free c: channel.
+
+const vBasePoint:bitstring [data].
+
+fun Exp(bitstring,bitstring):bitstring.
+fun Encrypt(bitstring,bitstring):bitstring.
+  reduc forall a0:bitstring,a1:bitstring;
+    Decrypt(Encrypt(a0,a1),a1) = a0.
+fun ModMult(bitstring,bitstring):bitstring.
+  reduc forall a0:bitstring,a1:bitstring;
+    ModDiv0(ModMult(a0,a1),a1) = a0.
+
+equation forall a1:bitstring,a2:bitstring;
+  Exp(Exp(vBasePoint, a1), a2) = Exp(Exp(vBasePoint, a2), a1).
+
+type ID.
+const Ali,Bob,TTP:ID.
+table PrivKeys(ID, bitstring).
+table PubKeys(ID, bitstring).
+
+const t1, t2, t3: bitstring.
+
+event A_mess(bitstring).
+event B_mess(bitstring).
+event Test(bitstring).
+
+free secret_bit:bitstring [private].
+query attacker(secret_bit).
+
+let processTTP() =
+  new sk_ali:bitstring;
+  new sk_bob:bitstring;
+  insert PrivKeys(Ali, sk_ali);
+  insert PrivKeys(Bob, sk_bob);
+
+  let pk_ali = Exp(vBasePoint,sk_ali) in
+  insert PubKeys(Ali, pk_ali);
+  out(c,pk_ali);
+  let pk_bob = Exp(vBasePoint,sk_bob) in
+  insert PubKeys(Bob, pk_bob);
+  out(c,pk_bob).
+
+let processAli() =
+  get PrivKeys(=Ali, sk_ali:bitstring) in
+  let pk_ali = Exp(vBasePoint,sk_ali) in
+  in(c,pk_bob:bitstring);
+  get PubKeys(=Bob, ttp_pk_bob:bitstring) in
+
+  new nonceA:bitstring;
+  new symm_key_1:bitstring;
+  new ephm_key_1:bitstring;
+  let gy_ephm_key_1 = Exp(pk_bob, ephm_key_1) in
+  let f20 = ModMult(symm_key_1, gy_ephm_key_1) in
+  let f11 = Exp(vBasePoint, ephm_key_1) in
+  let mess_1 = (t1, nonceA, pk_ali) in
+  let enc_mess_1 = Encrypt(mess_1, symm_key_1) in
+  out(c, (f11, f20, enc_mess_1));
+
+  in(c,(f31:bitstring,f38:bitstring,enc_mess_2:bitstring));
+  let symm_key_2 = ModDiv0(f38,Exp(f31,sk_ali)) in
+  let mess_2 = Decrypt(enc_mess_2, symm_key_2) in
+  let (=t2, =nonceA, nonceB:bitstring) = mess_2 in
+
+  let mess_3 = (t3, nonceB) in
+  let enc_mess_3 = Encrypt(mess_3, symm_key_1) in
+  out(c, enc_mess_3);
+
+  out(c, Encrypt(secret_bit, symm_key_1));
+  event A_mess(symm_key_1).
+
+let processBob() =
+  get PrivKeys(=Bob, sk_bob:bitstring) in
+  let pk_bob = Exp(vBasePoint,sk_bob) in
+
+  in(c,(f11:bitstring,f21:bitstring,enc_mess_1:bitstring));
+  let symm_key_1 = ModDiv0(f21,Exp(f11,sk_bob)) in
+  let mess_1 = Decrypt(enc_mess_1, symm_key_1) in
+  let (=t1, nonceA:bitstring, pk_ali:bitstring) = mess_1 in
+
+  new nonceB:bitstring;
+  new symm_key_2:bitstring;
+  new ephm_key_2:bitstring;
+  let gy_ephm_key_2 = Exp(pk_ali, ephm_key_2) in
+  let f44 = ModMult(symm_key_2, gy_ephm_key_2) in
+  let f37 = Exp(vBasePoint, ephm_key_2) in
+  let mess_2 = (t2, nonceA, nonceB) in
+  let enc_mess_2 = Encrypt(mess_2, symm_key_2) in
+  out(c, (f37, f44, enc_mess_2));
+
+  in(c, enc_mess_3:bitstring);
+  let mess_3 = Decrypt(enc_mess_3, symm_key_1) in
+  let (=t3, nonceB:bitstring) = mess_3 in
+  event B_mess(symm_key_1).
+
+
+process
+    ((processTTP) | (processAli) | (processBob))
