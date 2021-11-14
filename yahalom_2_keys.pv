@@ -1,0 +1,127 @@
+free c: channel.
+ 
+const vBasePoint:bitstring [data].
+ 
+type ID.
+const A,B,J:ID.
+table PrivKeys(ID, bitstring).
+table PubKeys(ID, bitstring).
+ 
+fun Exp(bitstring,bitstring):bitstring.
+fun Encrypt(bitstring,bitstring):bitstring.
+  reduc forall a0:bitstring,a1:bitstring;
+    Decrypt(Encrypt(a0,a1),a1) = a0.
+fun ModMult(bitstring,bitstring):bitstring.
+  reduc forall a0:bitstring,a1:bitstring;
+    ModDiv0(ModMult(a0,a1),a1) = a0.
+ 
+equation forall a1:bitstring,a2:bitstring;
+  Exp(Exp(vBasePoint, a1), a2) = Exp(Exp(vBasePoint, a2), a1).
+ 
+event endB(bitstring).
+event endA(bitstring).
+event endJ(bitstring).
+ 
+free secret_bit:bitstring [private].
+ 
+query attacker(secret_bit).
+ 
+let processJ(sk_ttp:bitstring, pk_ttp:bitstring,
+             pk_ali:bitstring, pk_bob:bitstring) =
+ 
+  in(c, (f_A1:bitstring, f_A2:bitstring));
+  let k_AJ = ModDiv0(f_A2, Exp(f_A1, sk_ttp)) in
+ 
+  in(c, (f_B1:bitstring, f_B2:bitstring));
+  let k_BJ = ModDiv0(f_B2, Exp(f_B1, sk_ttp)) in
+ 
+(* msg2 *)
+  in(c, (=B, enc_mess_2:bitstring));
+  let mess_2 = Decrypt(enc_mess_2, k_BJ) in
+  let (=A, nonceA:bitstring, nonceB:bitstring) = mess_2 in
+ 
+(* msg3 *)
+  new k:bitstring;
+  let enc_mess_3_p1 = Encrypt((B, k, nonceA, nonceB), k_AJ) in
+  let enc_mess_3_p2 = Encrypt((A, k), k_BJ) in
+  out(c, (enc_mess_3_p1, enc_mess_3_p2)).
+ 
+let processA(sk_ali:bitstring, pk_ali:bitstring,
+             pk_bob:bitstring, pk_ttp:bitstring) =
+ 
+(* key_to_TTP *)
+  new k_AJ:bitstring;
+  new ephm_key_1:bitstring;
+  let gy_ephm_key_1 = Exp(pk_ttp, ephm_key_1) in
+  let f_A1 = ModMult(k_AJ, gy_ephm_key_1) in
+  let f_A2 = Exp(vBasePoint, ephm_key_1) in
+  out(c, (f_A1, f_A2));
+ 
+(*
+  in(c, (f_A1:bitstring, f_A2:bitstring));
+  let k_AJ = ModDiv0(f_A2, Exp(f_A1, sk_ali)) in
+*)
+(* msg1 *)
+  new nonceA:bitstring;
+  out(c, (A, nonceA));
+ 
+(* msg3 *)
+  in(c, (enc_mess_3_p1:bitstring, enc_mess_3_p2:bitstring));
+  let mess_3_p1 = Decrypt(enc_mess_3_p1, k_AJ) in
+  let (=B, k:bitstring, =nonceA, nonceB:bitstring) = mess_3_p1 in
+ 
+(* msg4 *)
+  let enc_mess_4_p2 = Encrypt(k, nonceB) in
+  out(c, (mess_3_p1, enc_mess_4_p2));
+  event endA(k);
+ 
+  out(c, Encrypt(secret_bit, k)).
+ 
+let processB(sk_bob:bitstring, pk_bob:bitstring,
+             pk_ali:bitstring, pk_ttp:bitstring) =
+ 
+(* key_B *)
+ 
+  new k_BJ:bitstring;
+  new ephm_key_2:bitstring;
+  let gy_ephm_key_2 = Exp(pk_ttp, ephm_key_2) in
+  let f_B1 = ModMult(k_BJ, gy_ephm_key_2) in
+  let f_B2 = Exp(vBasePoint, ephm_key_2) in
+  out(c, (f_B1, f_B2));
+ 
+(*
+  in(c, (f_B1:bitstring, f_B2:bitstring));
+  let k_BJ = ModDiv0(f_B2, Exp(f_B1, sk_bob)) in
+*)
+(* msg1 *)
+  in(c, (=A, nonceA:bitstring));
+ 
+(* msg2 *)
+  new nonceB:bitstring;
+  let mess_2 = (A, nonceA, nonceB) in
+  let enc_mess_2 = Encrypt(mess_2, k_BJ) in
+  out(c, enc_mess_2);
+ 
+(* msg4 *)
+  in(c, (enc_mess_4_p1:bitstring, enc_mess_4_p2:bitstring));
+  let mess_4_p1 = Decrypt(enc_mess_4_p1, k_BJ) in
+  let (=A, k:bitstring) = mess_4_p1 in
+  let mess_4_p2 = Decrypt(enc_mess_4_p2, k) in
+  if mess_4_p2 = nonceB then
+  let enc_nonceB = Encrypt(secret_bit, nonceB) in
+  out(c, enc_nonceB);
+  event endB(k).
+ 
+process
+  new sk_ali:bitstring; let pk_ali = Exp(vBasePoint,sk_ali) in
+  out(c,pk_ali);
+  new sk_bob:bitstring; let pk_bob = Exp(vBasePoint,sk_bob) in
+  out(c,pk_bob);
+  new sk_ttp:bitstring; let pk_ttp = Exp(vBasePoint,sk_ttp) in
+  out(c,pk_ttp);
+ 
+    (
+      (! processA(sk_ali, pk_ali, pk_bob, pk_ttp)) |
+      (! processB(sk_bob, pk_bob, pk_ali, pk_ttp)) |
+      (! processJ(sk_ttp, pk_ttp, pk_ali, pk_bob))
+    )
